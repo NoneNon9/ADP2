@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: defaultdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker-init/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+      - ./order-service/migrations/001_init.sql:/migrations/order_init.sql
+      - ./payment-service/migrations/001_init.sql:/migrations/payment_init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d defaultdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  order-service:
+    build:
+      context: ./order-service
+    ports:
+      - "8080:8080"
+      - "50052:50052"
+    environment:
+      DATABASE_URL: "postgres://admin:password@postgres:5432/orderdb?sslmode=disable"
+      PAYMENT_SERVICE_GRPC_URL: "payment-service:50051"
+      GRPC_PORT: "50052"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  payment-service:
+    build:
+      context: ./payment-service
+    ports:
+      - "50051:50051"
+    environment:
+      DATABASE_URL: "postgres://admin:password@postgres:5432/paymentdb?sslmode=disable"
+      GRPC_PORT: "50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
