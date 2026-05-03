@@ -6,7 +6,8 @@ import (
 )
 
 type PaymentUseCase struct {
-	repo domain.PaymentRepository
+	repo      domain.PaymentRepository
+	publisher domain.EventPublisher
 }
 
 func NewPaymentUseCase(repo domain.PaymentRepository) *PaymentUseCase {
@@ -27,6 +28,16 @@ func (uc *PaymentUseCase) ProcessPayment(orderID string, amount int64) (domain.P
 		TransactionID: "TXN-" + uuid.NewString(),
 		Amount:        amount,
 		Status:        status,
+	}
+	if status == "Authorized" {
+		event := domain.PaymentEvent{
+			EventID:       uuid.NewString(),
+			OrderID:       orderID,
+			Amount:        float64(amount) / 100.0,
+			CustomerEmail: "user@example.com",
+			Status:        status,
+		}
+		_ = uc.publisher.PublishPaymentCompleted(event)
 	}
 
 	err := uc.repo.Save(payment)

@@ -6,6 +6,7 @@ require (
 	github.com/NoneNon9/convertedProto v1.1.0
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.12.1
+	github.com/rabbitmq/amqp091-go v1.11.0
 	google.golang.org/grpc v1.80.0
 )
 

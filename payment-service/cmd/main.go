@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"payment-service/internal/broker"
 	"payment-service/internal/transport/grpchandler"
 	"time"
 
@@ -43,6 +44,24 @@ func main() {
 	if err := db.Ping(); err != nil {
 		log.Fatalf("Database is unreachable: %v", err)
 	}
+
+	rabbitURL := os.Getenv("RABBITMQ_URL")
+	if rabbitURL == "" {
+		rabbitURL = "amqp://guest:guest@localhost:5672/"
+	}
+	var publisher *broker.RabbitMQPublisher
+	for i := 0; i < 5; i++ {
+		publisher, err = broker.NewRabbitMQPublisher(rabbitURL)
+		if err == nil {
+			break
+		}
+		log.Printf("RabbitMQ not ready, retrying... (%v)", err)
+		time.Sleep(2 * time.Second)
+	}
+	if err != nil {
+		log.Fatalf("Could not connect to RabbitMQ: %v", err)
+	}
+	defer publisher.Close()
 
 	paymentRepo := repository.NewPostgresPaymentRepository(db)
 	paymentUseCase := usecase.NewPaymentUseCase(paymentRepo)
