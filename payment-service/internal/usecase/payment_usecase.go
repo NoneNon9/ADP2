@@ -10,9 +10,10 @@ type PaymentUseCase struct {
 	publisher domain.EventPublisher
 }
 
-func NewPaymentUseCase(repo domain.PaymentRepository) *PaymentUseCase {
+func NewPaymentUseCase(repo domain.PaymentRepository, publisher domain.EventPublisher) *PaymentUseCase {
 	return &PaymentUseCase{
-		repo: repo,
+		repo:      repo,
+		publisher: publisher,
 	}
 }
 

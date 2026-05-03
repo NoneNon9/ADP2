@@ -50,6 +50,7 @@ func main() {
 		rabbitURL = "amqp://guest:guest@localhost:5672/"
 	}
 	var publisher *broker.RabbitMQPublisher
+
 	for i := 0; i < 5; i++ {
 		publisher, err = broker.NewRabbitMQPublisher(rabbitURL)
 		if err == nil {
@@ -64,7 +65,7 @@ func main() {
 	defer publisher.Close()
 
 	paymentRepo := repository.NewPostgresPaymentRepository(db)
-	paymentUseCase := usecase.NewPaymentUseCase(paymentRepo)
+	paymentUseCase := usecase.NewPaymentUseCase(paymentRepo, publisher)
 	paymentHandler := grpchandler.NewPaymentGRPCHandler(paymentUseCase)
 	lis, err := net.Listen("tcp", ":"+grpcPort)
 	if err != nil {
