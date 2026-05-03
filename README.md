@@ -1,39 +1,38 @@
-# 📦 E-Commerce Platform: gRPC Microservices & Clean Architecture
+# 📦 E-Commerce Platform: Event-Driven Microservices
 
-This platform is a resilient, distributed system built with **Go**, **gRPC**, and **PostgreSQL**. It demonstrates **Clean Architecture** within two distinct **Bounded Contexts**, ensuring high maintainability, strict fault tolerance, and real-time streaming capabilities.
+This platform is a resilient, distributed system built with **Go**, **gRPC**, **PostgreSQL**, and **RabbitMQ**. It demonstrates the evolution from tightly coupled synchronous services to an **Event-Driven Architecture**, ensuring high maintainability, fault tolerance, and message reliability.
 
 ---
 
 ## 🏛 Architecture Decisions
 
-### 1. Clean Architecture (Internal)
-Each service is partitioned into four distinct layers: **Domain, Use Case, Repository, and Transport**.
-* **Decision:** We use a **Composition Root** in `main.go` for manual Dependency Injection.
-* **Reasoning:** This avoids "magic" frameworks and keeps the business logic (Use Cases) completely independent of the database (Postgres) and the delivery mechanisms (HTTP/REST and gRPC).
+### 1. Clean Architecture
+Each microservice (Order, Payment, Notification) is structured using Clean Architecture principles, partitioned into distinct layers: **Domain, Use Case, Repository, and Transport/Broker**.
+* **Composition Root:** Dependency injection is handled manually in `main.go` to keep business logic independent of external frameworks.
 
-### 2. Contract-First Flow (Protobufs)
-* **Decision:** All inter-service contracts (`.proto` files) are strictly managed in a separate remote repository: [github.com/NoneNon9/convertedProto](https://github.com/NoneNon9/convertedProto).
-* **Reasoning:** This ensures both the Order and Payment services rely on a single source of truth for their communication schemas, fetched automatically via Go Modules (`go.mod`).
-
-### 3. Bounded Contexts & Data Ownership
-* **Decision:** Each service has its own dedicated database (`orderdb` and `paymentdb`).
-* **Reasoning:** We strictly follow the **Database-per-Service** pattern. This prevents "Hidden Coupling" where one service accidentally depends on the table structure of another.
+### 2. Event-Driven Flow & Decoupling
+To prevent synchronous bottlenecks and third-party API dependencies, the platform uses an asynchronous flow:
+* **Payment Service (Producer):** After a successful database transaction, it publishes a `payment.completed` event to RabbitMQ.
+* **Notification Service (Consumer):** A completely decoupled service that listens to the RabbitMQ queue and simulates sending emails without any direct knowledge of the Order or Payment services.
 
 ---
 
-## ⚡ Core Features
+## ⚡ Core Features & Reliability Guarantees
 
-### 1. gRPC Inter-Service Communication
-* The external API facing the client remains **REST/JSON** (port 8080) for wide accessibility.
-* Internal communication between the Order Gateway and Payment Service uses **gRPC** (port 50051) for high-performance, strongly typed binary serialization.
+### 1. Delivery Guarantees & ACK Logic
+We achieve **At-Least-Once delivery** by ensuring messages are never lost if a consumer crashes mid-processing:
+* **Manual ACKs:** The `auto-ack` setting is completely disabled in the RabbitMQ consumer.
+* **Confirmation Check:** A message is only explicitly acknowledged (`msg.Ack(false)`) after the simulated email log successfully prints to the console and the state is saved. If the Notification Service crashes before this, the broker detects the dropped TCP connection and requeues the message.
 
-### 2. Real-Time Order Tracking (Server-Side Streaming)
-* The Order Service implements a gRPC Server-Side Stream (`SubscribeToOrderUpdates` on port 50052).
-* Instead of clients polling for updates, the `OrderUseCase` uses internal Go channels to actively push database state changes directly to connected clients in real-time.
+### 2. Idempotency Strategy
+Because At-Least-Once delivery can result in duplicate messages (e.g., network retries), the consumer must be idempotent:
+* **Mechanism:** Every incoming event contains a unique `EventID`. The Notification Service utilizes an in-memory cache (`sync.Map`) as its data store to track processed IDs.
+* **Logic:** Before processing a message, the service checks the cache. If the ID exists, the message is immediately acknowledged and safely discarded. If it doesn't exist, the email is simulated, the ID is recorded, and the message is explicitly acknowledged.
 
-### 3. Idempotency & Failure Handling
-* **Idempotency-Key:** The `POST /orders` endpoint supports an idempotency header. If the same key is sent twice (e.g., due to a network retry), the service returns the existing order instead of double-charging.
-* **Error Propagation:** Database errors and validation failures are properly mapped to standard `google.golang.org/grpc/status` codes (e.g., `InvalidArgument`, `Internal`).
+### 3. Advanced Failure Handling: Dead Letter Queue (DLQ)
+To handle poison messages or permanent failures without clogging the main queue, the broker is configured with a Dead Letter Exchange (DLX):
+* If the consumer encounters an unrecoverable error (simulated via `OrderID == "FAIL_ME"`), the message is explicitly rejected (`msg.Nack(false, false)`).
+* RabbitMQ automatically routes this rejected message to the dedicated `payment_dlq` for later inspection.
 
 ---
 
