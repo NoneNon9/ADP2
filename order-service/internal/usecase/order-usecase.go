@@ -1,24 +1,27 @@
 package usecase
 
 import (
+	"context"
+	"github.com/google/uuid"
+	"order-service/internal/cache"
+	"order-service/internal/domain"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
-	"order-service/internal/domain"
 )
 
 type OrderUseCase struct {
 	repo        domain.OrderRepository
 	payment     domain.PaymentGateway
+	cache       *cache.RedisOrderCache
 	subscribers map[string]chan string
 	mu          sync.RWMutex
 }
 
-func NewOrderUseCase(repo domain.OrderRepository, payment domain.PaymentGateway) *OrderUseCase {
+func NewOrderUseCase(repo domain.OrderRepository, payment domain.PaymentGateway, cache *cache.RedisOrderCache) *OrderUseCase {
 	return &OrderUseCase{
 		repo:        repo,
 		payment:     payment,
+		cache:       cache,
 		subscribers: make(map[string]chan string),
 	}
 }
@@ -96,6 +99,18 @@ func (uc *OrderUseCase) CancelOrder(id string) error {
 	return err
 }
 
-func (uc *OrderUseCase) GetOrder(id string) (domain.Order, error) {
-	return uc.repo.GetByID(id)
+func (uc *OrderUseCase) GetOrder(ctx context.Context, id string) (domain.Order, error) {
+
+	order, err := uc.cache.Get(ctx, id)
+	if err == nil {
+		return order, nil
+	}
+
+	order, err = uc.repo.GetByID(id)
+	if err != nil {
+		return order, err
+	}
+
+	_ = uc.cache.Set(ctx, order)
+	return order, nil
 }

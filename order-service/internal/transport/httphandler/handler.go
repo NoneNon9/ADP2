@@ -61,7 +61,7 @@ func (h *OrderHandler) HandleGetOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	order, err := h.usecase.GetOrder(id)
+	order, err := h.usecase.GetOrder(r.Context(), id)
 	if err != nil {
 		if err.Error() == "order not found" {
 			http.Error(w, err.Error(), http.StatusNotFound)

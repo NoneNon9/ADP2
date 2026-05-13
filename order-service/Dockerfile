@@ -7,7 +7,7 @@ COPY go.mod go.sum* ./
 RUN go mod tidy
 
 COPY . .
-RUN go build -o order-service-app ./cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o order-service-app ./cmd/main.go
 
 
 FROM alpine:latest

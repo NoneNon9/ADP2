@@ -36,7 +36,21 @@ To handle poison messages or permanent failures without clogging the main queue,
 
 ---
 
-## 🚀 Setup & Testing
+## 🚀 Production-Ready Scaling (Assignment 4 Updates)
+
+### 1. Cache-Aside & Atomic Invalidation
+The Order Service utilizes **Redis** to alleviate database read pressure. 
+* **Read Path:** When fetching an order by ID, the system queries Redis first. If a cache miss occurs, it queries PostgreSQL and immediately populates the Redis cache with a 5-minute TTL.
+* **Invalidation Strategy:** Cache consistency is strictly maintained. The moment an order's state changes in PostgreSQL (e.g., transitioning from "Pending" to "Paid" via the Payment gateway), the Order Service aggressively issues a `DEL` command to Redis for that specific `orderID`. This guarantees that subsequent reads fetch the fresh state from the database.
+
+### 2. Background Worker & External Adapters
+The Notification Service has evolved into a robust Background Worker completely detached from the user's API response time.
+* **Adapter Pattern:** External APIs (like SMTP or Mailjet) are hidden behind an `EmailSender` interface. The implementation can be swapped via the `PROVIDER_MODE` environment variable without altering business logic.
+* **Retry Logic & Exponential Backoff:** External providers are inherently flaky. If the provider returns a transient error, the worker catches it and retries the job. To avoid overwhelming the recovering external service, it uses an **Exponential Backoff** strategy, sleeping for `2s`, then `4s`, then `8s` before making subsequent attempts.
+* **Distributed Idempotency:** To prevent duplicate emails during retries or network blips, the worker uses Redis. It calls `SETNX` (Set if Not Exists) using the event ID. If the key exists, the worker safely ACKs the message and skips processing.
+
+### 3. Bonus: API Rate Limiter
+The Order Service is protected by a Redis-backed Rate Limiter middleware. It tracks the incoming IPs, using Redis's `INCR` and `EXPIRE` commands to allow a maximum of 10 requests per minute. Exceeding this limit returns an HTTP `429 Too Many Requests`, protecting the core infrastructure from spikes.
 
 ### 1. Bring up the containers
 ```bash

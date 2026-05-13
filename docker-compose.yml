@@ -19,19 +19,35 @@ services:
       timeout: 5s
       retries: 5
 
-  order-service:
-    build:
-      context: ./order-service
+  redis:
+    image: redis:7-alpine
+    container_name: redis_cache
     ports:
-      - "8080:8080"
-      - "50052:50052"
-    environment:
-      DATABASE_URL: "postgres://admin:password@postgres:5432/orderdb?sslmode=disable"
-      PAYMENT_SERVICE_GRPC_URL: "payment-service:50051"
-      GRPC_PORT: "50052"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  order-service:
+      build:
+        context: ./order-service
+      ports:
+        - "8080:8080"
+        - "50052:50052"
+      environment:
+        DATABASE_URL: "postgres://admin:password@postgres:5432/orderdb?sslmode=disable"
+        PAYMENT_SERVICE_GRPC_URL: "payment-service:50051"
+        GRPC_PORT: "50052"
+        REDIS_URL: "redis:6379"
+      depends_on:
+        postgres:
+          condition: service_healthy
+        redis:
+          condition: service_healthy
+
+
 
   payment-service:
     build:
@@ -44,6 +60,8 @@ services:
       GRPC_PORT: "50051"
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
 
@@ -62,15 +80,17 @@ services:
       retries: 3
 
   notification-service:
-      build:
-        context: ./notification-service
-        dockerfile: Dockerfile
-      container_name: notification_service
-      environment:
-        RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
-      depends_on:
-        rabbitmq:
-          condition: service_healthy
+    build:
+      context: ./notification-service
+    environment:
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+      REDIS_URL: "redis:6379"
+      PROVIDER_MODE: "SIMULATED"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
     rabbitmq_data:
